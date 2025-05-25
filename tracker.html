@@ -1,0 +1,1928 @@
+<!DOCTYPE html><html lang="en"><head>
+    <title>Solar System Asteroid Tracker - Community Edition</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; color: #fff; background-color: #000; overflow: hidden; }
+        #container { width: 100%; height: 100%; }
+        #main_canvas { display: block; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .label { position: absolute; background-color: rgba(0,0,0,0.7); color: #fff; padding: 5px; border-radius: 3px; font-size: 12px; white-space: nowrap; }
+        #options_panel, #library_panel, #time_panel, #info_panel {
+            position: absolute;
+            background-color: rgba(30,30,30,0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            color: #eee;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        #options_panel { top: 20px; left: 20px; width: 280px; }
+        #library_panel { top: 20px; right: 20px; width: 300px; max-height: calc(100vh - 180px); display: flex; flex-direction: column; }
+        #time_panel { bottom: 20px; left: 20px; right: 20px; height: 80px; display: flex; flex-direction: column; align-items: center; }
+        #info_panel { bottom: 120px; left: 20px; width: 280px; display: none; /* Initially hidden */ }
+
+        .panel_label { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #0af; border-bottom: 1px solid #0af; padding-bottom: 5px; }
+        #options_table, #library_list_container { margin-top: 10px; }
+        #options_table td { padding: 6px 0; }
+        .option_label { font-weight: bold; padding-right: 10px; }
+        select, input[type="range"], button {
+            background-color: #222;
+            color: #ddd;
+            border: 1px solid #555;
+            padding: 5px;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        select { width: calc(100% - 10px); }
+        button { cursor: pointer; background-color: #08a; margin-top: 10px;}
+        button:hover { background-color: #0af; }
+
+        #library_list_container { flex-grow: 1; overflow-y: auto; background-color: #111; border: 1px solid #444; border-radius: 4px; padding: 5px;}
+        #library_list { width: 100%; border-collapse: collapse; }
+        #library_list th, #library_list td { padding: 8px; text-align: left; border-bottom: 1px solid #333; }
+        #library_list th { background-color: #282828; font-weight: bold; }
+        #library_list tr:hover { background-color: #2a2a2a; }
+        #library_list tr.selected { background-color: #058; font-weight: bold; }
+        .clickable { cursor: pointer; }
+
+        #time_slider_container { display: flex; align-items: center; width: 100%; margin-top: 5px; }
+        #time_slider { flex-grow: 1; margin: 0 10px; }
+        #time_value, #date_display { font-size: 12px; color: #ccc; }
+        #date_display { margin-top: 5px; font-style: italic; }
+
+        #search_library { width: calc(100% - 12px); margin-bottom: 10px; padding: 6px; background-color: #111; border: 1px solid #555; color: #fff; }
+
+        /* Tooltip styles */
+        .tooltip {
+            position: absolute;
+            background-color: rgba(20,20,20,0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 13px;
+            white-space: pre-line; /* Allows newlines in tooltip */
+            pointer-events: none; /* Important so it doesn't interfere with mouse events on canvas */
+            display: none; /* Hidden by default */
+            border: 1px solid #555;
+            z-index: 1000; /* Ensure it's on top */
+        }
+
+        /* Styling for orbits */
+        .orbit-line { stroke-width: 1px; opacity: 0.5; }
+        .orbit-line-earth { stroke: #0077ff; }
+        .orbit-line-mars { stroke: #ff5500; }
+        .orbit-line-default { stroke: #888888; }
+
+        /* Progress bar for loading */
+        #loading_indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2em;
+            background-color: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        #loading_progress_bar_container {
+            width: 200px;
+            height: 10px;
+            background-color: #555;
+            border-radius: 5px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        #loading_progress_bar {
+            width: 0%;
+            height: 100%;
+            background-color: #0af;
+            transition: width 0.1s ease-in-out;
+        }
+
+        /* For React UI components */
+        #react_ui_root { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; /* Base container shouldn't intercept */ }
+        #react_ui_root > div { pointer-events: auto; /* Children of root should intercept */ }
+
+        /* Additional styles for info panel */
+        #info_panel h3 { font-size: 16px; color: #0af; margin-top: 0; margin-bottom: 8px; }
+        #info_panel p { margin: 4px 0; }
+        #info_panel .info-field { font-weight: bold; color: #ccc; }
+        #close_info_panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        #close_info_panel:hover { color: #fff; }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            #options_panel, #library_panel, #info_panel {
+                width: calc(100% - 40px); /* Full width with some padding */
+                left: 20px;
+                right: 20px;
+                top: auto; /* Unset top for stacking */
+                max-height: 35vh; /* Limit height on small screens */
+            }
+            #options_panel { position:relative; top:0; left:0; margin:10px; width: auto; }
+            #library_panel { position:relative; top:0; left:0; margin:10px; width: auto; max-height: 200px; }
+            #info_panel { position:relative; top:0; left:0; margin:10px; width: auto; }
+            #time_panel {
+                position: relative; /* Make it part of the flow */
+                bottom: auto; left: auto; right: auto;
+                height: auto; /* Adjust height */
+                padding: 10px; margin: 10px;
+            }
+             #library_list_container { max-height: 150px; } /* Further restrict library list */
+        }
+
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="main_canvas"></canvas>
+    </div>
+    <div id="overlay"></div>
+    <div id="react_ui_root"></div>
+    <div class="tooltip" id="object_tooltip"></div>
+
+    <div id="loading_indicator">
+        <p>Loading Assets...</p>
+        <div id="loading_progress_bar_container"><div id="loading_progress_bar"></div></div>
+        <p id="loading_status_text">Initializing...</p>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+
+    <script type="text/babel">
+
+// --- Global Variables & Configuration ---
+const AU = 149.6e6; // Astronomical Unit in km
+const EARTH_RADIUS_KM = 6371; // Earth radius in km
+const SUN_RADIUS_KM = 695700;
+const SCALE_FACTOR = 1 / 500000; // Scales real distances down for Three.js (1 unit = 500,000 km)
+const NEO_VISUAL_SCALE = 100; // NEOs are tiny, scale them up visually
+const MIN_NEO_VIS_SIZE = 0.02; // Minimum visual size for NEOs in Three.js units
+const MAX_NEO_VIS_SIZE = 0.1;  // Maximum visual size for NEOs
+
+// --- Utility Functions ---
+function kmToUnits(km) { return km * SCALE_FACTOR; }
+function unitsToKm(units) { return units / SCALE_FACTOR; }
+
+// Helper to convert RA (hms) and Dec (dms) to Cartesian coordinates
+function raDecToCartesian(ra_h, ra_m, ra_s, dec_d, dec_m, dec_s, distance_au) {
+    const ra_deg = (ra_h + ra_m/60 + ra_s/3600) * 15; // RA to degrees
+    const dec_deg = Math.abs(dec_d) + dec_m/60 + dec_s/3600;
+    const final_dec_deg = dec_d < 0 ? -dec_deg : dec_deg;
+
+    const r = distance_au * AU; // distance in km
+    const x = r * Math.cos(THREE.MathUtils.degToRad(final_dec_deg)) * Math.cos(THREE.MathUtils.degToRad(ra_deg));
+    const y = r * Math.cos(THREE.MathUtils.degToRad(final_dec_deg)) * Math.sin(THREE.MathUtils.degToRad(ra_deg));
+    const z = r * Math.sin(THREE.MathUtils.degToRad(final_dec_deg));
+    return new THREE.Vector3(kmToUnits(x), kmToUnits(z), kmToUnits(-y)); // Swapped Y and Z for Three.js convention (Y-up)
+}
+
+
+// Debounce function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+
+// --- WebsimSocket (Simplified) ---
+class WebsimSocket {
+    constructor(url) {
+        this.url = url;
+        this.listeners = {};
+        this.connect();
+        this.request_id_counter = 0;
+        this.pending_requests = {};
+    }
+
+    connect() {
+        console.log("Attempting to connect to Websim server at " + this.url);
+        // Placeholder for actual WebSocket connection
+        // In a real scenario, this would be: this.ws = new WebSocket(this.url);
+        // this.ws.onopen = () => console.log("Websim connected.");
+        // this.ws.onmessage = (event) => this.handleMessage(event);
+        // this.ws.onclose = () => console.log("Websim disconnected.");
+        // this.ws.onerror = (error) => console.error("Websim error:", error);
+
+        // Simulate connection for demo purposes
+        setTimeout(() => {
+            console.log("Websim connected (simulated).");
+            if (this.listeners['open']) this.listeners['open']();
+        }, 500);
+    }
+
+    on(event, callback) {
+        this.listeners[event] = callback;
+    }
+
+    emit(event_name, data, callback) {
+        const request_id = `req_${this.request_id_counter++}`;
+        const message = { type: event_name, payload: data, request_id: request_id };
+        console.log("Websim emit:", message);
+
+        if (callback) {
+            this.pending_requests[request_id] = callback;
+        }
+
+        // Simulate server response for specific events
+        if (event_name === 'get_library') {
+            setTimeout(() => this.handleSimulatedMessage({
+                type: 'library_data',
+                request_id: request_id,
+                payload: {
+                    asteroids: [
+                        {id: 'neo_2023qx', name: '2023 QX', class: 'Apollo', diameter_km: 0.5,
+                         est_min_diameter_km: 0.4, est_max_diameter_km: 0.6,
+                         discovery_date: '2023-08-15', last_obs_date: '2023-09-01',
+                         moid_au: 0.004, v_inf_km_s: 10.2,
+                         h_mag: 22.1, albedo: 0.15,
+                         ra_h:10, ra_m:30, ra_s:0, dec_d:20, dec_m:15, dec_s:0, dist_au: 0.05,
+                         description: "A recently discovered Near-Earth Object with a close approach predicted in 2045."},
+                        {id: 'phaethon', name: '3200 Phaethon', class: 'Apollo (PHA)', diameter_km: 5.8,
+                         est_min_diameter_km: 5.5, est_max_diameter_km: 6.1,
+                         discovery_date: '1983-10-11', last_obs_date: '2023-08-20',
+                         moid_au: 0.019, v_inf_km_s: 25.0,
+                         h_mag: 14.6, albedo: 0.12,
+                         ra_h:2, ra_m:10, ra_s:0, dec_d:-5, dec_m:0, dec_s:0, dist_au: 0.2,
+                         description: "Parent body of the Geminids meteor shower. Known for its unusually close perihelion to the Sun."},
+                        {id: 'eros', name: '433 Eros', class: 'Amor', diameter_km: 16.8,
+                         discovery_date: '1898-08-13', last_obs_date: '2023-08-25',
+                         moid_au: 0.149, v_inf_km_s: 5.5,
+                         h_mag: 11.2, albedo: 0.25,
+                         ra_h:18, ra_m:0, ra_s:0, dec_d:30, dec_m:0, dec_s:0, dist_au: 0.3,
+                         description: "The first asteroid to be orbited and landed on by a spacecraft (NEAR Shoemaker)."},
+                        {id: 'apophis', name: '99942 Apophis', class: 'Aten (PHA)', diameter_km: 0.37,
+                         discovery_date: '2004-06-19', last_obs_date: '2023-09-02',
+                         moid_au: 0.0003, v_inf_km_s: 5.8,
+                         h_mag: 19.7, albedo: 0.33,
+                         ra_h:22, ra_m:5, ra_s:0, dec_d:-15, dec_m:30, dec_s:0, dist_au: 0.1,
+                         description: "Famous for its predicted close approaches to Earth, particularly in 2029 and 2036. No longer considered a significant impact risk."},
+                        {id: 'bennu', name: '101955 Bennu', class: 'Apollo (PHA)', diameter_km: 0.49,
+                         discovery_date: '1999-09-11', last_obs_date: '2023-08-15',
+                         moid_au: 0.003, v_inf_km_s: 6.3,
+                         h_mag: 20.9, albedo: 0.04,
+                         ra_h:5, ra_m:50, ra_s:0, dec_d:10, dec_m:0, dec_s:0, dist_au: 0.08,
+                         description: "Target of NASA's OSIRIS-REx sample return mission. A carbonaceous asteroid, potentially rich in organic compounds."},
+                    ]
+                } // This closes payload
+            }), 1000); // This closes the object for handleSimulatedMessage & the setTimeout call
+        } else if (event_name === 'get_asteroid_orbital_elements') {
+             setTimeout(() => this.handleSimulatedMessage({
+                type: 'asteroid_orbital_elements',
+                request_id: request_id,
+                payload: { // Simplified Keplerian elements for demonstration
+                    [data.asteroid_id]: {
+                        epoch: 2460200.5, // JD
+                        a: AU * (1.0 + Math.random() * 2), // semi-major axis (km)
+                        e: 0.1 + Math.random() * 0.5,     // eccentricity
+                        i: Math.random() * 20,            // inclination (deg)
+                        om: Math.random() * 360,          // longitude of ascending node (deg)
+                        w: Math.random() * 360,           // argument of perihelion (deg)
+                        ma: Math.random() * 360,          // mean anomaly at epoch (deg)
+                    }
+                }
+            }), 700);
+        } else if (event_name === 'get_live_positions') {
+             setTimeout(() => {
+                const positions = {};
+                data.ids.forEach(id => {
+                    // Simulate some orbital motion - THIS IS NOT ORBITAL MECHANICS
+                    const time_factor = (Date.now() / 500000);
+                    const random_offset = id.charCodeAt(0) * 100;
+                    const angle = (time_factor + random_offset) % (2 * Math.PI);
+                    const radius_au = 0.5 + (id.length % 5) * 0.3 + Math.random()*0.2; // AU
+                    positions[id] = {
+                        x: kmToUnits(radius_au * AU * Math.cos(angle)),
+                        y: kmToUnits(radius_au * AU * Math.sin(angle)),
+                        z: kmToUnits((Math.random() - 0.5) * 0.1 * AU) // Slight z variation
+                    };
+                });
+                this.handleSimulatedMessage({ type: 'live_positions_update', request_id: request_id, payload: positions });
+            }, 100); // Fast update for positions
+        }
+    }
+
+    handleMessage(event) {
+        // const message = JSON.parse(event.data);
+        // console.log("Websim recv:", message);
+        // if (this.listeners[message.type]) {
+        //     this.listeners[message.type](message.payload);
+        // }
+        // For simulated messages directly:
+        this.handleSimulatedMessage(event); // if event is already the message object
+    }
+
+    handleSimulatedMessage(message) { // Added for demo
+        console.log("Websim recv (simulated):", message);
+        if (message.request_id && this.pending_requests[message.request_id]) {
+            this.pending_requests[message.request_id](message.payload);
+            delete this.pending_requests[message.request_id];
+        } else if (this.listeners[message.type]) {
+            this.listeners[message.type](message.payload);
+        } else {
+            console.warn("Unhandled message type or no pending request:", message.type);
+        }
+    }
+}
+
+// --- TouchControls (Enhanced) ---
+class TouchControls {
+    constructor(targetElement, camera, options = {}) {
+        this.targetElement = targetElement;
+        this.camera = camera;
+        this.enabled = true;
+        this.enablePan = options.enablePan !== undefined ? options.enablePan : true;
+        this.enableZoom = options.enableZoom !== undefined ? options.enableZoom : true;
+        this.enableRotate = options.enableRotate !== undefined ? options.enableRotate : true;
+
+        this.rotateSpeed = options.rotateSpeed || 0.005;
+        this.zoomSpeed = options.zoomSpeed || 0.002;
+        this.panSpeed = options.panSpeed || 0.001;
+
+        this.minDistance = options.minDistance || kmToUnits(EARTH_RADIUS_KM * 1.5); // Min distance from target (e.g. Earth surface)
+        this.maxDistance = options.maxDistance || kmToUnits(AU * 5); // Max zoom out
+
+        this.domElement = this.targetElement; // For compatibility with some THREE controls patterns
+
+        this.state = 'NONE';
+        this.pointers = [];
+        this.pointerPositions = {};
+
+        // Target for rotation/panning. Initially origin, can be changed.
+        this.target = new THREE.Vector3();
+        this.spherical = new THREE.Spherical();
+        this.sphericalDelta = new THREE.Spherical();
+
+        this.panOffset = new THREE.Vector3();
+        this.zoomDistance = this.camera.position.length();
+
+
+        this._onContextMenu = this.onContextMenu.bind(this);
+        this._onPointerDown = this.onPointerDown.bind(this);
+        this._onPointerMove = this.onPointerMove.bind(this);
+        this._onPointerUp = this.onPointerUp.bind(this);
+        this._onMouseWheel = this.onMouseWheel.bind(this);
+        this._onKeyDown = this.onKeyDown.bind(this); // For keyboard controls (optional)
+
+        this.connect();
+        this.update(); // Initialize spherical coordinates from camera
+    }
+
+    connect() {
+        this.domElement.addEventListener('contextmenu', this._onContextMenu);
+
+        this.domElement.addEventListener('pointerdown', this._onPointerDown);
+        this.domElement.addEventListener('pointercancel', this._onPointerUp); // Treat cancel like up
+        this.domElement.addEventListener('wheel', this._onMouseWheel, { passive: false });
+
+        // For multi-touch, pointermove and pointerup are global
+        window.addEventListener('pointermove', this._onPointerMove);
+        window.addEventListener('pointerup', this._onPointerUp);
+
+        window.addEventListener('keydown', this._onKeyDown);
+    }
+
+    disconnect() {
+        this.domElement.removeEventListener('contextmenu', this._onContextMenu);
+        this.domElement.removeEventListener('pointerdown', this._onPointerDown);
+        this.domElement.removeEventListener('pointercancel', this._onPointerUp);
+        this.domElement.removeEventListener('wheel', this._onMouseWheel);
+
+        window.removeEventListener('pointermove', this._onPointerMove);
+        window.removeEventListener('pointerup', this._onPointerUp);
+        window.removeEventListener('keydown', this._onKeyDown);
+    }
+
+    onContextMenu(event) {
+        if (!this.enabled) return;
+        event.preventDefault();
+    }
+
+    onPointerDown(event) {
+        if (!this.enabled) return;
+        if (this.pointers.length === 0) {
+            this.domElement.setPointerCapture(event.pointerId);
+        }
+        this.addPointer(event);
+
+        if (event.pointerType === 'touch') {
+            this.onTouchStart(event);
+        } else {
+            this.onMouseDown(event);
+        }
+    }
+
+    onPointerMove(event) {
+        if (!this.enabled) return;
+
+        const pointer = this.getPointer(event);
+        if (!pointer) return; // Not one of our active pointers
+
+        if (event.pointerType === 'touch') {
+            this.onTouchMove(event);
+        } else {
+            this.onMouseMove(event);
+        }
+    }
+
+    onPointerUp(event) {
+        if (!this.enabled) return;
+
+        this.removePointer(event);
+        if (this.pointers.length === 0) {
+            this.domElement.releasePointerCapture(event.pointerId);
+        }
+
+        if (event.pointerType === 'touch') {
+            this.onTouchEnd(event);
+        } else {
+            this.onMouseUp(event);
+        }
+    }
+
+    onMouseDown(event) {
+        if (event.button === 0) { // Left mouse
+            this.state = 'ROTATE';
+        } else if (event.button === 1) { // Middle mouse
+            this.state = 'DOLLY'; // Or PAN, depending on preference
+        } else if (event.button === 2) { // Right mouse
+            this.state = 'PAN';
+        }
+        // Store initial mouse down position for rotation delta calculation
+        this.pointerPositions[event.pointerId] = { x: event.pageX, y: event.pageY, prevX: event.pageX, prevY: event.pageY };
+    }
+
+    onMouseMove(event) {
+        const currentPtr = this.pointerPositions[event.pointerId];
+        if (!currentPtr) return;
+
+        const deltaX = event.pageX - currentPtr.prevX;
+        const deltaY = event.pageY - currentPtr.prevY;
+
+        if (this.state === 'ROTATE' && this.enableRotate) {
+            this.handleTouchMoveRotate(event.pageX, event.pageY, currentPtr.prevX, currentPtr.prevY);
+        } else if (this.state === 'DOLLY' && this.enableZoom) { // Zoom with middle mouse drag
+            this.handleTouchMoveDolly(deltaY);
+        } else if (this.state === 'PAN' && this.enablePan) {
+            this.handleTouchMovePan(deltaX, deltaY);
+        }
+        currentPtr.prevX = event.pageX;
+        currentPtr.prevY = event.pageY;
+    }
+
+    onMouseUp(event) {
+        this.state = 'NONE';
+    }
+
+    onMouseWheel(event) {
+        if (!this.enabled || !this.enableZoom) return;
+        event.preventDefault();
+        this.handleMouseWheel(event);
+    }
+
+    onTouchStart(event) {
+        // event.preventDefault(); // Done by pointerdown if necessary
+        const pointers = this.getPointers();
+        if (pointers.length === 1) {
+            this.state = 'TOUCH_ROTATE'; // Single finger touch rotates
+            this.pointerPositions[pointers[0].pointerId] = {
+                x: pointers[0].pageX, y: pointers[0].pageY,
+                prevX: pointers[0].pageX, prevY: pointers[0].pageY
+            };
+        } else if (pointers.length === 2) {
+            this.state = 'TOUCH_DOLLY_PAN'; // Two fingers for zoom/pan
+            const dx = pointers[0].pageX - pointers[1].pageX;
+            const dy = pointers[0].pageY - pointers[1].pageY;
+            this.last_pinch_dist = Math.sqrt(dx * dx + dy * dy);
+            // Also store initial mid-point for panning
+            this.last_pinch_midpoint = {
+                x: (pointers[0].pageX + pointers[1].pageX) / 2,
+                y: (pointers[0].pageY + pointers[1].pageY) / 2
+            };
+        }
+    }
+
+    onTouchMove(event) {
+        // event.preventDefault(); // Done by pointermove if necessary
+        const pointers = this.getPointers();
+        const activePointerId = event.pointerId; // The pointer that actually moved
+        const currentPtrState = this.pointerPositions[activePointerId];
+
+        if (!currentPtrState) return; // Should not happen if addPointer/removePointer is correct
+
+        if (this.state === 'TOUCH_ROTATE' && pointers.length === 1 && this.enableRotate) {
+            if (pointers[0].pointerId === activePointerId) { // Make sure it's the rotating finger
+                 this.handleTouchMoveRotate(event.pageX, event.pageY, currentPtrState.prevX, currentPtrState.prevY);
+            }
+        } else if (this.state === 'TOUCH_DOLLY_PAN' && pointers.length === 2) {
+            // Find both pointers involved in the two-finger gesture
+            const p0 = pointers[0].pointerId === activePointerId ? pointers[0] : pointers.find(p => p.pointerId !== activePointerId);
+            const p1 = pointers[1].pointerId === activePointerId ? pointers[1] : pointers.find(p => p.pointerId !== activePointerId && p.pointerId !== p0.pointerId);
+
+            if (p0 && p1) { // Make sure we have two distinct pointers
+                const current_pinch_dist = Math.sqrt(
+                    (p0.pageX - p1.pageX) ** 2 +
+                    (p0.pageY - p1.pageY) ** 2
+                );
+                const current_pinch_midpoint = {
+                    x: (p0.pageX + p1.pageX) / 2,
+                    y: (p0.pageY + p1.pageY) / 2
+                };
+
+                if (this.enableZoom) {
+                    const delta_dist = current_pinch_dist - this.last_pinch_dist;
+                    this.handleTouchMoveDolly(delta_dist * 2); // Multiply delta for sensitivity
+                }
+                if (this.enablePan) {
+                    const pan_delta_x = current_pinch_midpoint.x - this.last_pinch_midpoint.x;
+                    const pan_delta_y = current_pinch_midpoint.y - this.last_pinch_midpoint.y;
+                    this.handleTouchMovePan(pan_delta_x, pan_delta_y);
+                }
+
+                this.last_pinch_dist = current_pinch_dist;
+                this.last_pinch_midpoint = current_pinch_midpoint;
+            }
+        }
+        currentPtrState.prevX = event.pageX;
+        currentPtrState.prevY = event.pageY;
+    }
+
+    onTouchEnd(event) {
+        const pointers = this.getPointers();
+        if (pointers.length === 0) {
+            this.state = 'NONE';
+        } else if (pointers.length === 1) {
+            // If one finger lifts from a two-finger gesture, switch to rotate with the remaining finger
+            this.state = 'TOUCH_ROTATE';
+            this.pointerPositions[pointers[0].pointerId] = {
+                x: pointers[0].pageX, y: pointers[0].pageY,
+                prevX: pointers[0].pageX, prevY: pointers[0].pageY
+            };
+        } else {
+           // Still multiple pointers, possibly for a different gesture or error.
+           // For simplicity, we can just reset if more than 2, or let onTouchStart handle it next.
+        }
+    }
+
+    onKeyDown(event) {
+        // Optional: Implement keyboard controls for pan/zoom/rotate
+        // Example: Arrow keys for rotation, +/- for zoom
+        if (!this.enabled) return;
+        let needsUpdate = false;
+        switch (event.code) {
+            case 'ArrowUp': this.sphericalDelta.phi -= this.rotateSpeed * 50; needsUpdate = true; break;
+            case 'ArrowDown': this.sphericalDelta.phi += this.rotateSpeed * 50; needsUpdate = true; break;
+            case 'ArrowLeft': this.sphericalDelta.theta -= this.rotateSpeed * 50; needsUpdate = true; break;
+            case 'ArrowRight': this.sphericalDelta.theta += this.rotateSpeed * 50; needsUpdate = true; break;
+            case 'Equal': case 'NumpadAdd': this.zoomDistance /= 1.1; needsUpdate = true; break;
+            case 'Minus': case 'NumpadSubtract': this.zoomDistance *= 1.1; needsUpdate = true; break;
+        }
+        if (needsUpdate) {
+            event.preventDefault();
+            this.update();
+        }
+    }
+
+    // Core logic handlers
+    handleTouchMoveRotate(currentX, currentY, prevX, prevY) {
+        const deltaX = currentX - prevX;
+        const deltaY = currentY - prevY;
+
+        this.sphericalDelta.theta -= deltaX * this.rotateSpeed;
+        this.sphericalDelta.phi -= deltaY * this.rotateSpeed;
+        this.update();
+    }
+
+    handleTouchMoveDolly(delta) { // Delta can be from pinch or middle mouse drag
+        this.zoomDistance += delta * this.zoomSpeed * this.zoomDistance * 0.1; // Scale sensitivity by current zoom
+        this.update();
+    }
+
+    handleTouchMovePan(deltaX, deltaY) {
+        const offset = new THREE.Vector3();
+        const position = this.camera.position;
+        offset.copy(position).sub(this.target);
+        let targetDistance = offset.length();
+        targetDistance *= Math.tan((this.camera.fov / 2) * Math.PI / 180.0); // visible height
+
+        // Pan speed relative to screen dimensions and distance
+        const panFactorX = (2 * targetDistance * this.panSpeed * this.camera.aspect) / this.domElement.clientHeight;
+        const panFactorY = (2 * targetDistance * this.panSpeed) / this.domElement.clientHeight;
+
+        this.panOffset.add(this.panLeft(panFactorX * deltaX));
+        this.panOffset.add(this.panUp(panFactorY * deltaY));
+        this.update();
+    }
+
+    handleMouseWheel(event) {
+        if (event.deltaY < 0) { // wheel up
+            this.zoomDistance /= 1.1;
+        } else if (event.deltaY > 0) { // wheel down
+            this.zoomDistance *= 1.1;
+        }
+        this.update();
+    }
+
+    // Pan helpers
+    panLeft(distance) {
+        const te = this.camera.matrix.elements;
+        const v = new THREE.Vector3();
+        v.set(te[0], te[1], te[2]);
+        v.multiplyScalar(-distance);
+        return v;
+    }
+
+    panUp(distance) {
+        const te = this.camera.matrix.elements;
+        const v = new THREE.Vector3();
+        // Use camera's local up if Y is up, or adjust if Z is up
+        if (this.camera.up.y) v.set(te[4], te[5], te[6]); // Y-up
+        else v.set(0,1,0).applyQuaternion(this.camera.quaternion); // More robust way if camera up might change
+
+        v.multiplyScalar(distance);
+        return v;
+    }
+
+
+    update() {
+        const offset = new THREE.Vector3();
+        const quat = new THREE.Quaternion().setFromUnitVectors(this.camera.up, new THREE.Vector3(0, 1, 0)); // Y-up
+        const quatInverse = quat.clone().invert();
+
+        const position = this.camera.position;
+        offset.copy(position).sub(this.target); // current offset from target
+        offset.applyQuaternion(quat); // rotate to Y-up space
+
+        this.spherical.setFromVector3(offset);
+
+        this.spherical.radius = this.zoomDistance; // Apply zoom
+        this.spherical.theta += this.sphericalDelta.theta;
+        this.spherical.phi += this.sphericalDelta.phi;
+
+        // restrict phi to avoid gimbal lock / flipping
+        this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.spherical.phi));
+        this.spherical.makeSafe(); // keep theta in valid range
+
+        this.spherical.radius = Math.max(this.minDistance, Math.min(this.maxDistance, this.spherical.radius));
+
+        this.target.add(this.panOffset); // Apply panning to the target
+
+        offset.setFromSpherical(this.spherical);
+        offset.applyQuaternion(quatInverse); // rotate back to original camera up direction
+
+        this.camera.position.copy(this.target).add(offset);
+        this.camera.lookAt(this.target);
+
+        // Reset deltas
+        this.sphericalDelta.set(0, 0, 0);
+        this.panOffset.set(0, 0, 0);
+
+        // If using Tween.js for smooth transitions, this is where you'd update TWEEN
+        TWEEN.update();
+    }
+
+    // Pointer tracking
+    addPointer(event) {
+        this.pointers.push(event);
+        this.pointerPositions[event.pointerId] = { x: event.pageX, y: event.pageY, prevX: event.pageX, prevY: event.pageY };
+    }
+    removePointer(event) {
+        delete this.pointerPositions[event.pointerId];
+        for (let i = 0; i < this.pointers.length; i++) {
+            if (this.pointers[i].pointerId == event.pointerId) {
+                this.pointers.splice(i, 1);
+                return;
+            }
+        }
+    }
+    getPointer(event) { return this.pointers.find(p => p.pointerId === event.pointerId); }
+    getPointers() { return this.pointers; }
+
+
+    // --- Public API ---
+    setTarget(newTargetPosition, lookAtTarget = true, transitionDuration = 0) {
+        const currentTarget = this.target.clone();
+        const newTarget = newTargetPosition.clone();
+
+        if (transitionDuration > 0) {
+            new TWEEN.Tween(currentTarget)
+                .to(newTarget, transitionDuration)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .onUpdate(() => {
+                    this.target.copy(currentTarget);
+                    if (!lookAtTarget) this.update(); // If not auto-looking, just update controls state
+                })
+                .start();
+
+            if (lookAtTarget) { // Also tween camera position to maintain relative offset if desired
+                const startOffset = this.camera.position.clone().sub(this.target);
+                new TWEEN.Tween({}) // Dummy tween for camera position
+                    .to({}, transitionDuration)
+                    .onUpdate(() => {
+                        this.camera.position.copy(this.target).add(startOffset);
+                        this.camera.lookAt(this.target);
+                        this.zoomDistance = this.camera.position.distanceTo(this.target);
+                        this.updateSphericalFromCamera(); // Crucial: keep spherical coords in sync
+                    })
+                    .start();
+            }
+        } else {
+            this.target.copy(newTarget);
+            if (lookAtTarget) {
+                this.camera.lookAt(this.target);
+            }
+            this.updateSphericalFromCamera();
+        }
+        this.update();
+    }
+
+    setCameraPosition(newPosition, lookAtTarget = null, transitionDuration = 0) {
+        const currentPosition = this.camera.position.clone();
+        const finalPosition = newPosition.clone();
+
+        if (transitionDuration > 0) {
+            new TWEEN.Tween(currentPosition)
+                .to(finalPosition, transitionDuration)
+                .easing(TWEEN.Easing.Quadratic.Out)
+                .onUpdate(() => {
+                    this.camera.position.copy(currentPosition);
+                    if (lookAtTarget) this.camera.lookAt(lookAtTarget instanceof THREE.Vector3 ? lookAtTarget : this.target);
+                    this.updateSphericalFromCamera();
+                })
+                .start();
+        } else {
+            this.camera.position.copy(finalPosition);
+            if (lookAtTarget) this.camera.lookAt(lookAtTarget instanceof THREE.Vector3 ? lookAtTarget : this.target);
+            this.updateSphericalFromCamera();
+        }
+    }
+
+    updateSphericalFromCamera() {
+        const offset = new THREE.Vector3();
+        const quat = new THREE.Quaternion().setFromUnitVectors(this.camera.up, new THREE.Vector3(0, 1, 0));
+        const quatInverse = quat.clone().invert();
+
+        offset.copy(this.camera.position).sub(this.target);
+        offset.applyQuaternion(quat);
+        this.spherical.setFromVector3(offset);
+        this.zoomDistance = this.spherical.radius; // Update zoomDistance to current actual distance
+    }
+
+    dispose() { this.disconnect(); }
+}
+
+
+// --- AsteroidTracker Application ---
+class AsteroidTracker {
+    constructor() {
+        this.container = document.getElementById('container');
+        this.canvas = document.getElementById('main_canvas');
+        this.overlay = document.getElementById('overlay');
+        this.tooltipElement = document.getElementById('object_tooltip');
+        this.loadingIndicator = document.getElementById('loading_indicator');
+        this.loadingProgressBar = document.getElementById('loading_progress_bar');
+        this.loadingStatusText = document.getElementById('loading_status_text');
+
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, kmToUnits(1000), kmToUnits(AU * 100));
+        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true }); // Alpha for transparent background if needed
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        // this.renderer.outputEncoding = THREE.sRGBEncoding; // For more accurate colors if using PBR materials
+
+        this.controls = new TouchControls(this.renderer.domElement, this.camera, {
+            minDistance: kmToUnits(EARTH_RADIUS_KM * 1.1),
+            maxDistance: kmToUnits(AU * 20), // Max zoom out to 20 AU
+            panSpeed: 0.0005, // Adjusted pan speed
+        });
+        this.controls.target.set(0, 0, 0); // Initial target at the Sun
+
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        this.intersectedObject = null;
+        this.selectedObject = null;
+
+        this.clock = new THREE.Clock();
+        this.currentJulianDate = this.getJulianDate(new Date()); // Current simulation time
+
+        this.ambientLight = new THREE.AmbientLight(0x606070, 0.8); // Softer ambient
+        this.scene.add(this.ambientLight);
+        this.sunLight = new THREE.PointLight(0xffffff, 1.5, kmToUnits(AU * 50)); // Brighter, further reaching sunlight
+        this.sunLight.position.set(0,0,0); // At the center (Sun's position)
+        this.scene.add(this.sunLight);
+
+        this.textureLoader = new THREE.TextureLoader();
+        this.fontLoader = new THREE.FontLoader(); // For 3D text, if needed
+
+        this.trackedNEOs = new Map(); // Stores { id: { mesh: THREE.Mesh, data: neoData, label: HTMLElement, orbitLine: THREE.Line } }
+        this.celestialBodies = new Map(); // Sun, Planets
+
+        this.orbitLinesGroup = new THREE.Group(); // Group for all orbit lines
+        this.scene.add(this.orbitLinesGroup);
+
+        this.options = {
+            showLabels: 'basic', // 'none', 'basic', 'detailed'
+            showOrbits: 'selected', // 'none', 'selected', 'all_planets', 'all_neos'
+            referenceFrame: 'Sun', // Body name or 'Sun'
+            timeScale: 1, // Multiplier for simulation speed (1 = real-time, 0 = paused)
+            labelMaxDistance: kmToUnits(AU * 0.5), // Max distance to show labels
+        };
+
+        this.simulatedTime = new Date(); // Start at current real time
+        this.timeWarpFactor = 1; // 1 = real-time, >1 faster, <1 slower, 0 paused
+        this.isTimeDragging = false;
+
+        this.setupLoadingManager();
+        this.initializeReactUI(); // Initialize React components
+        this.loadStaticAssets(); // Sun, planets, skybox etc.
+        this.connectToServer();
+
+        window.addEventListener('resize', this.onWindowResize.bind(this), false);
+        this.renderer.domElement.addEventListener('mousemove', this.onMouseMove.bind(this), false);
+        this.renderer.domElement.addEventListener('click', this.onCanvasClick.bind(this), false);
+        // Debounced mouse move for raycasting to save performance
+        this.debouncedOnMouseMove = debounce(this.onMouseMove.bind(this), 50);
+        this.renderer.domElement.addEventListener('mousemove', this.debouncedOnMouseMove, false);
+
+
+        this.animate();
+    }
+
+    setupLoadingManager() {
+        this.loadingManager = new THREE.LoadingManager();
+        this.loadingManager.onStart = (url, itemsLoaded, itemsTotal) => {
+            this.loadingIndicator.style.display = 'block';
+            this.loadingStatusText.textContent = `Loading: ${url.split('/').pop()}`;
+            console.log(`Started loading: ${url} (${itemsLoaded}/${itemsTotal})`);
+        };
+        this.loadingManager.onLoad = () => {
+            this.loadingIndicator.style.display = 'none';
+            console.log("All assets loaded.");
+            // Any actions after all assets are loaded
+            this.updateAllPositions(this.currentJulianDate); // Initial position update
+        };
+        this.loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+            const progress = (itemsLoaded / itemsTotal) * 100;
+            this.loadingProgressBar.style.width = `${progress}%`;
+            this.loadingStatusText.textContent = `Loading: ${url.split('/').pop()} (${itemsLoaded}/${itemsTotal})`;
+            console.log(`Loading file: ${url} (${itemsLoaded}/${itemsTotal})`);
+        };
+        this.loadingManager.onError = (url) => {
+            console.error(`Error loading ${url}`);
+            this.loadingStatusText.textContent = `Error loading: ${url.split('/').pop()}`;
+        };
+        // Assign manager to loaders
+        this.textureLoader.manager = this.loadingManager;
+        // this.fontLoader.manager = this.loadingManager; // If using font loader
+    }
+
+
+    initializeReactUI() {
+        const UIRoot = ({ app }) => {
+            // State for various UI elements, passed down from app.options or app state
+            const [librarySearchTerm, setLibrarySearchTerm] = React.useState('');
+            const [neoLibrary, setNeoLibrary] = React.useState([]);
+            const [selectedNeoInfo, setSelectedNeoInfo] = React.useState(null);
+            const [currentTimeDisplay, setCurrentTimeDisplay] = React.useState(app.simulatedTime.toISOString());
+
+            // Connect to app events or state
+            React.useEffect(() => {
+                const handleLibraryUpdate = (library) => setNeoLibrary(library);
+                const handleSelectionUpdate = (neoData) => setSelectedNeoInfo(neoData);
+                const handleTimeUpdate = (newTime) => setCurrentTimeDisplay(newTime.toISOString().substring(0,16).replace('T',' '));
+
+                app.on('libraryUpdated', handleLibraryUpdate);
+                app.on('neoSelected', handleSelectionUpdate); // Assuming app emits this
+                app.on('timeUpdated', handleTimeUpdate); // Assuming app emits this
+
+                app.getAsteroidLibrary(); // Initial fetch
+
+                return () => {
+                    app.off('libraryUpdated', handleLibraryUpdate);
+                    app.off('neoSelected', handleSelectionUpdate);
+                    app.off('timeUpdated', handleTimeUpdate);
+                };
+            }, [app]);
+
+
+            const handleOptionChange = (optionKey, value) => {
+                app.setOption(optionKey, value);
+                // For some options, trigger immediate refresh
+                if (optionKey === 'showLabels' || optionKey === 'showOrbits') {
+                    app.refreshVisuals();
+                }
+                if (optionKey === 'referenceFrame') {
+                    app.setReferenceFrame(value);
+                }
+            };
+
+            const handleTimeSliderChange = (event) => {
+                // This slider might control time warp factor or a specific time point
+                // For now, let's assume it controls warp factor
+                const factor = parseFloat(event.target.value);
+                app.setTimeWarp(factor);
+            };
+
+            const handleDateChange = (event) => {
+                const newDate = new Date(event.target.value);
+                app.setSimulationTime(newDate);
+            };
+
+            const filteredLibrary = neoLibrary.filter(neo =>
+                neo.name.toLowerCase().includes(librarySearchTerm.toLowerCase()) ||
+                (neo.id && neo.id.toLowerCase().includes(librarySearchTerm.toLowerCase()))
+            );
+
+            return (
+                React.createElement('div', null,
+                    React.createElement('div', { id: 'options_panel' },
+                        React.createElement('div', { className: 'panel_label' }, 'Display Options'),
+                        React.createElement('table', { id: 'options_table' },
+                            React.createElement('tbody', null,
+                                React.createElement('tr', null,
+                                    React.createElement('td', { className: 'option_label' }, 'Labels:'),
+                                    React.createElement('td', null, React.createElement('select', { value: app.options.showLabels, onChange: e => handleOptionChange('showLabels', e.target.value) },
+                                        React.createElement('option', { value: 'none' }, 'None'),
+                                        React.createElement('option', { value: 'basic' }, 'Basic'),
+                                        React.createElement('option', { value: 'detailed' }, 'Detailed')
+                                    ))
+                                ),
+                                React.createElement('tr', null,
+                                    React.createElement('td', { className: 'option_label' }, 'Orbits:'),
+                                    React.createElement('td', null, React.createElement('select', { value: app.options.showOrbits, onChange: e => handleOptionChange('showOrbits', e.target.value) },
+                                        React.createElement('option', { value: 'none' }, 'None'),
+                                        React.createElement('option', { value: 'selected' }, 'Selected NEO'),
+                                        React.createElement('option', { value: 'all_planets' }, 'Planets'),
+                                        React.createElement('option', { value: 'all_visible_neos' }, 'Visible NEOs')
+                                    ))
+                                ),
+                                React.createElement('tr', null,
+                                    React.createElement('td', { className: 'option_label' }, 'Reference:'),
+                                    React.createElement('td', null, React.createElement('select', { value: app.options.referenceFrame, onChange: e => handleOptionChange('referenceFrame', e.target.value) },
+                                        React.createElement('option', { value: 'Sun' }, 'Sun (Ecliptic North)'),
+                                        React.createElement('option', { value: 'Earth' }, 'Earth (Geocentric)'),
+                                        // Populate with other planets dynamically if desired
+                                    ))
+                                )
+                            )
+                        )
+                    ),
+                    React.createElement('div', { id: 'library_panel' },
+                        React.createElement('div', { className: 'panel_label' }, 'NEO Library'),
+                        React.createElement('input', {
+                            type: 'text', id: 'search_library', placeholder: 'Search NEOs...',
+                            value: librarySearchTerm, onChange: e => setLibrarySearchTerm(e.target.value)
+                        }),
+                        React.createElement('div', { id: 'library_list_container' },
+                            React.createElement('table', { id: 'library_list' },
+                                React.createElement('thead', null, React.createElement('tr', null,
+                                    React.createElement('th', null, 'Name'),
+                                    React.createElement('th', null, 'Class'),
+                                    React.createElement('th', null, 'Diameter (km)')
+                                )),
+                                React.createElement('tbody', null,
+                                    filteredLibrary.map(neo => React.createElement('tr', {
+                                        key: neo.id,
+                                        className: `clickable ${app.selectedObject && app.selectedObject.userData.id === neo.id ? 'selected' : ''}`,
+                                        onClick: () => app.selectAndFocusOnNeo(neo.id)
+                                    },
+                                        React.createElement('td', null, neo.name),
+                                        React.createElement('td', null, neo.class),
+                                        React.createElement('td', null, neo.diameter_km ? neo.diameter_km.toFixed(2) : 'N/A')
+                                    ))
+                                )
+                            )
+                        )
+                    ),
+                    React.createElement('div', { id: 'time_panel' },
+                        React.createElement('div', { className: 'panel_label' }, 'Simulation Time'),
+                        React.createElement('div', { id: 'time_slider_container' },
+                            React.createElement('button', { onClick: () => app.setTimeWarp(app.timeWarpFactor / 2) }, 'Slower'),
+                            React.createElement('input', { type: 'range', id: 'time_slider', min: '0', max: '10000', step: '1', defaultValue: '1', onChange: handleTimeSliderChange }),
+                            React.createElement('button', { onClick: () => app.setTimeWarp(app.timeWarpFactor * 2) }, 'Faster'),
+                            React.createElement('button', { onClick: () => app.setTimeWarp(0) }, 'Pause'),
+                            React.createElement('button', { onClick: () => app.setSimulationTime(new Date())}, 'Now')
+                        ),
+                        React.createElement('div', { id: 'date_display' },
+                            React.createElement('input', { type: 'datetime-local', value: app.simulatedTime.toISOString().substring(0,16), onChange: handleDateChange }),
+                             ` Warp: ${app.timeWarpFactor.toFixed(1)}x`
+                        )
+                    ),
+                    selectedNeoInfo && React.createElement('div', { id: 'info_panel' },
+                         React.createElement('button', { id: 'close_info_panel', onClick: () => setSelectedNeoInfo(null) }, '×'),
+                         React.createElement('h3', null, selectedNeoInfo.name),
+                         React.createElement('p', null, React.createElement('span', {className: 'info-field'}, 'Class: '), selectedNeoInfo.class),
+                         React.createElement('p', null, React.createElement('span', {className: 'info-field'}, 'Diameter: '), `${selectedNeoInfo.diameter_km || 'N/A'} km`),
+                         React.createElement('p', null, React.createElement('span', {className: 'info-field'}, 'Discovered: '), selectedNeoInfo.discovery_date),
+                         React.createElement('p', null, React.createElement('span', {className: 'info-field'}, 'MOID (Earth): '), `${selectedNeoInfo.moid_au || 'N/A'} AU`),
+                         React.createElement('p', null, React.createElement('span', {className: 'info-field'}, 'Description: '), selectedNeoInfo.description || "No description available."),
+                         React.createElement('button', { onClick: () => app.calculateAndShowOrbit(selectedNeoInfo.id) }, 'Show Orbit')
+                    )
+                )
+            );
+        };
+        // Store app instance for React component to access
+        this.reactProps = { app: this };
+        ReactDOM.render(React.createElement(UIRoot, this.reactProps), document.getElementById('react_ui_root'));
+
+        // Initial call to update time display
+        this.emit('timeUpdated', this.simulatedTime);
+    }
+
+    // --- Event Emitter ---
+    _listeners = {};
+    on(eventName, callback) {
+        if (!this._listeners[eventName]) this._listeners[eventName] = [];
+        this._listeners[eventName].push(callback);
+    }
+    off(eventName, callback) {
+        if (this._listeners[eventName]) {
+            this._listeners[eventName] = this._listeners[eventName].filter(cb => cb !== callback);
+        }
+    }
+    emit(eventName, data) {
+        if (this._listeners[eventName]) {
+            this._listeners[eventName].forEach(cb => cb(data));
+        }
+        // Force React UI update if props changed that it might not directly subscribe to
+        // A more granular approach is better, but this is a fallback.
+        if (this.uiRootComponent) this.uiRootComponent.forceUpdate();
+
+        // Also manually update React components if needed for specific events
+        // This is a bit of a hack; ideally React state updates itself via props/context.
+        ReactDOM.render(React.createElement(this.reactProps.UIRoot, this.reactProps), document.getElementById('react_ui_root'));
+    }
+
+
+    connectToServer() {
+        window.room = new WebsimSocket(this.server_url || 'ws://localhost:8080/sim'); // Default URL
+        window.room.on('open', () => {
+            console.log("Connected to simulation server.");
+            this.getAsteroidLibrary(); // Fetch initial data
+        });
+        window.room.on('library_data', (data) => {
+            console.log("Received library data:", data);
+            this.neoData = data.asteroids; // Store raw data
+            this.emit('libraryUpdated', this.neoData); // For React UI
+            this.generateNEOs(this.neoData); // Create 3D objects
+        });
+        window.room.on('live_positions_update', (positions) => {
+            // This is for a scenario where server sends continuous updates
+            // For now, we calculate positions client-side based on orbital elements
+            // but this hook is here if we switch to server-sent positions.
+            // console.log("Live positions received:", positions);
+            // this.updateNEOPositionsFromServer(positions);
+        });
+         window.room.on('asteroid_orbital_elements', (data) => {
+            console.log("Received orbital elements:", data);
+            const neoId = Object.keys(data)[0];
+            if (neoId && this.trackedNEOs.has(neoId)) {
+                const neo = this.trackedNEOs.get(neoId);
+                neo.orbitalElements = data[neoId];
+                this.drawOrbit(neoId); // Draw orbit now that we have elements
+                this.updateAllPositions(this.currentJulianDate); // Update its position
+            }
+        });
+    }
+
+    getAsteroidLibrary() {
+        window.room.emit('get_library', {}, (libraryData) => {
+             // Callback version if emit supports it
+            console.log("Received library data (callback):", libraryData);
+            this.neoData = libraryData.asteroids;
+            this.emit('libraryUpdated', this.neoData);
+            this.generateNEOs(this.neoData);
+        });
+    }
+
+    loadStaticAssets() {
+        this.loadingStatusText.textContent = "Loading textures...";
+        // Sun
+        const sunGeometry = new THREE.SphereGeometry(kmToUnits(SUN_RADIUS_KM), 64, 64);
+        this.textureLoader.load('https://i.imgur.com/DMb3Max.jpeg', (sunTexture) => {
+            const sunMaterial = new THREE.MeshPhongMaterial({
+                map: sunTexture,
+                emissive: 0xffff00, emissiveMap: sunTexture, emissiveIntensity: 0.8,
+                shininess: 10
+            });
+            const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            sun.name = "Sun";
+            sun.userData = { type: 'Star', id: 'Sun' };
+            this.scene.add(sun);
+            this.celestialBodies.set("Sun", { mesh: sun, data: { name: "Sun", radius_km: SUN_RADIUS_KM }});
+            this.controls.target.set(0,0,0); // Ensure controls target the Sun initially
+        }, undefined, (err) => console.error("Error loading Sun texture:", err));
+
+
+        // Earth (as an example of a detailed planet)
+        this.createHighDetailEarth();
+
+        // Other planets (simplified for now)
+        const planetData = [
+            { name: "Mercury", radius_km: 2440, color: 0xaaaaaa, orbit_radius_au: 0.387, textureUrl: 'https://i.imgur.com/0NKVLTM.jpeg' },
+            { name: "Venus", radius_km: 6052, color: 0xffe0b2, orbit_radius_au: 0.723, textureUrl: 'https://i.imgur.com/dGkX8tS.jpeg' },
+            { name: "Mars", radius_km: 3390, color: 0xff7f50, orbit_radius_au: 1.524, textureUrl: 'https://i.imgur.com/VqRbCoC.jpeg' },
+            { name: "Jupiter", radius_km: 69911, color: 0xffd700, orbit_radius_au: 5.203, textureUrl: 'https://i.imgur.com/sQ4yXCa.jpeg' },
+            { name: "Saturn", radius_km: 58232, color: 0xf0e68c, orbit_radius_au: 9.537, textureUrl: 'https://i.imgur.com/52FV0r1.jpeg', ring: true, ringTextureUrl: 'https://i.imgur.com/nNbmEld.png' },
+            { name: "Uranus", radius_km: 25362, color: 0xadd8e6, orbit_radius_au: 19.191, textureUrl: 'https://i.imgur.com/uWn9N1X.jpeg' },
+            { name: "Neptune", radius_km: 24622, color: 0x6495ed, orbit_radius_au: 30.069, textureUrl: 'https://i.imgur.com/WLLk0f7.jpeg' },
+        ];
+
+        planetData.forEach(p => {
+            const planetGeometry = new THREE.SphereGeometry(kmToUnits(p.radius_km), 32, 32);
+            this.textureLoader.load(p.textureUrl, (texture) => {
+                const planetMaterial = new THREE.MeshPhongMaterial({ map: texture, shininess: 5 });
+                const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+                planet.name = p.name;
+                // Store orbital data directly in userData or a separate map
+                planet.userData = {
+                    type: 'Planet', id: p.name, data: p,
+                    orbitalElements: this.getApproximatePlanetOrbit(p.name, this.currentJulianDate) // Get initial elements
+                };
+                this.scene.add(planet);
+                this.celestialBodies.set(p.name, { mesh: planet, data: p, orbitalElements: planet.userData.orbitalElements });
+
+                if (p.ring) {
+                    this.textureLoader.load(p.ringTextureUrl, (ringTexture) => {
+                        const ringGeometry = new THREE.RingGeometry(kmToUnits(p.radius_km * 1.2), kmToUnits(p.radius_km * 2.5), 64);
+                        const ringMaterial = new THREE.MeshBasicMaterial({
+                            map: ringTexture,
+                            side: THREE.DoubleSide,
+                            transparent: true,
+                            opacity: 0.8
+                        });
+                        const ringMesh = new THREE.Mesh(ringGeometry, ringMaterial);
+                        ringMesh.rotation.x = Math.PI / 2.2; // Tilt
+                        planet.add(ringMesh);
+                    });
+                }
+                 this.drawOrbit(p.name, true); // Draw planet orbit
+            }, undefined, (err) => console.error(`Error loading ${p.name} texture:`, err));
+        });
+
+
+        // Skybox
+        this.loadingStatusText.textContent = "Loading skybox...";
+        const skyboxLoader = new THREE.CubeTextureLoader(this.loadingManager);
+        skyboxLoader.setPath('https://threejs.org/examples/textures/cube/MilkyWay/'); // Example path
+        const skyboxTexture = skyboxLoader.load([
+            'dark-s_px.jpg', 'dark-s_nx.jpg',
+            'dark-s_py.jpg', 'dark-s_ny.jpg',
+            'dark-s_pz.jpg', 'dark-s_nz.jpg'
+        ], () => {
+             this.scene.background = skyboxTexture;
+             console.log("Skybox loaded and set.");
+        }, undefined, (err) => console.error("Error loading skybox:", err) );
+
+
+        // Ecliptic plane helper (optional)
+        const eclipticGrid = new THREE.GridHelper(kmToUnits(AU * 10), 20, 0x444444, 0x333333);
+        eclipticGrid.rotation.x = Math.PI / 2; // Align with XY plane (ecliptic)
+        // this.scene.add(eclipticGrid);
+    }
+
+    createHighDetailEarth() {
+        const earthContainer = new THREE.Group(); // For Earth and its clouds/atmosphere
+        earthContainer.name = "EarthContainer";
+        this.scene.add(earthContainer);
+
+        const earthRadius = kmToUnits(EARTH_RADIUS_KM);
+        const earthGeometry = new THREE.SphereGeometry(earthRadius, 64, 64);
+
+        // Earth Day Texture
+        this.textureLoader.load('https://i.imgur.com/JAIrFk1.jpeg', (dayTexture) => {
+            // Earth Night Texture (optional, for city lights)
+            this.textureLoader.load('https://i.imgur.com/WffaH5U.jpeg', (nightTexture) => {
+                // Earth Specular Map (for water shininess)
+                this.textureLoader.load('https://i.imgur.com/mHl0K0X.png', (specularMap) => { // A simple specular map
+                    // Earth Normal Map (for more surface detail)
+                    this.textureLoader.load('https://i.imgur.com/ZVxRbrM.png', (normalMap) => { // Example normal map
+                        const earthMaterial = new THREE.MeshPhongMaterial({
+                            map: dayTexture,
+                            specularMap: specularMap,
+                            shininess: 15, // Adjust for desired water shininess
+                            normalMap: normalMap,
+                            normalScale: new THREE.Vector2(0.5, 0.5), // Adjust normal map intensity
+                            // Add night lights using emissive map if desired - requires custom shader or light/dark side detection logic
+                            // emissive: 0xffffff, emissiveMap: nightTexture, emissiveIntensity: 0.05 // Example
+                        });
+
+                        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+                        earth.name = "Earth";
+                        earth.userData = {
+                            type: 'Planet', id: 'Earth', radius_km: EARTH_RADIUS_KM,
+                            orbitalElements: this.getApproximatePlanetOrbit("Earth", this.currentJulianDate)
+                        };
+                        earthContainer.add(earth);
+                        this.celestialBodies.set("Earth", { mesh: earthContainer, // Store container for Earth system
+                            data: { name: "Earth", radius_km: EARTH_RADIUS_KM },
+                            orbitalElements: earth.userData.orbitalElements
+                        });
+                        this.drawOrbit("Earth", true);
+
+                        // Clouds (optional)
+                        this.textureLoader.load('https://i.imgur.com/k0qLp15.png', (cloudTexture) => { // Transparent cloud texture
+                            const cloudGeometry = new THREE.SphereGeometry(earthRadius * 1.015, 64, 64); // Slightly larger sphere
+                            const cloudMaterial = new THREE.MeshPhongMaterial({
+                                map: cloudTexture,
+                                transparent: true,
+                                opacity: 0.6,
+                                blending: THREE.AdditiveBlending, // Or NormalBlending for softer clouds
+                                depthWrite: false // Avoid z-fighting with Earth surface
+                            });
+                            const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                            clouds.name = "EarthClouds";
+                            earthContainer.add(clouds); // Add clouds to the Earth container
+                            earth.userData.clouds = clouds; // For individual rotation
+                        });
+
+                        // Atmosphere glow (optional - using shader)
+                        const atmosphereMaterial = new THREE.ShaderMaterial({
+                            uniforms: {
+                                "c":   { type: "f", value: 0.6 }, // Coefficient
+                                "p":   { type: "f", value: 5.0 }, // Power for Fresnel effect
+                                glowColor: { type: "c", value: new THREE.Color(0x4682b4) }, // Steel blue
+                                viewVector: { type: "v3", value: this.camera.position }
+                            },
+                            vertexShader: `
+                                uniform vec3 viewVector;
+                                varying float intensity;
+                                void main() {
+                                    vec3 vNormal = normalize( normalMatrix * normal );
+                                    vec3 vNormel = normalize( normalMatrix * viewVector ); // Camera position in model space
+                                    intensity = pow( c - dot(vNormal, vNormel), p );
+                                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                                }
+                            `,
+                            fragmentShader: `
+                                uniform vec3 glowColor;
+                                varying float intensity;
+                                void main() {
+                                    gl_FragColor = vec4( glowColor, 1.0 ) * intensity;
+                                }
+                            `,
+                            side: THREE.BackSide, // Render on the inside of the sphere
+                            blending: THREE.AdditiveBlending,
+                            transparent: true
+                        });
+                        const atmosphere = new THREE.Mesh(
+                            new THREE.SphereGeometry(earthRadius * 1.03, 64, 64), // Larger for glow effect
+                            atmosphereMaterial
+                        );
+                        atmosphere.name = "EarthAtmosphere";
+                        earthContainer.add(atmosphere);
+                    });
+                });
+            });
+        });
+    }
+
+
+    generateNEOs(neoDataArray) {
+        if (!neoDataArray) {
+            console.warn("NEO data is undefined. Cannot generate NEOs.");
+            return;
+        }
+        this.loadingStatusText.textContent = "Processing NEO data...";
+
+        // Clear existing NEOs (meshes and labels) before generating new ones
+        this.trackedNEOs.forEach(neo => {
+            if (neo.mesh) this.scene.remove(neo.mesh);
+            if (neo.label && neo.label.parentNode) neo.label.parentNode.removeChild(neo.label);
+            if (neo.orbitLine) this.orbitLinesGroup.remove(neo.orbitLine);
+        });
+        this.trackedNEOs.clear();
+
+
+        const genericNeoMaterial = new THREE.MeshPhongMaterial({ color: 0xff8800, shininess: 20 }); // Default orange
+        const phaMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000, shininess: 30 });    // Red for PHAs
+
+        neoDataArray.forEach(neoData => {
+            // Estimate visual size based on diameter, clamped
+            const diameterKm = neoData.diameter_km || (neoData.est_min_diameter_km + neoData.est_max_diameter_km) / 2 || 0.1; // Default small size
+            const visualSize = Math.max(MIN_NEO_VIS_SIZE, Math.min(MAX_NEO_VIS_SIZE, kmToUnits(diameterKm * NEO_VISUAL_SCALE)));
+
+            const geometry = new THREE.SphereGeometry(visualSize, 12, 12); // Simpler geometry for many objects
+            const material = neoData.is_potentially_hazardous_asteroid || (neoData.class && neoData.class.includes('PHA')) ? phaMaterial.clone() : genericNeoMaterial.clone();
+            if (neoData.albedo) material.color.multiplyScalar(neoData.albedo / 0.15); // Adjust brightness by albedo relative to average
+
+            const neoMesh = new THREE.Mesh(geometry, material);
+            neoMesh.name = neoData.name || neoData.id;
+            neoMesh.userData = { ...neoData, type: 'NEO', id: neoData.id }; // Store all data including ID
+
+            // Initial position - will be updated by orbital calculations
+            // Try to use RA/Dec if available for an initial guess, otherwise default
+            if (neoData.ra_h !== undefined && neoData.dist_au !== undefined) {
+                 const initialPos = raDecToCartesian(neoData.ra_h, neoData.ra_m, neoData.ra_s, neoData.dec_d, neoData.dec_m, neoData.dec_s, neoData.dist_au);
+                 neoMesh.position.copy(initialPos);
+            } else {
+                neoMesh.position.set(kmToUnits(AU * (1 + Math.random())), 0, 0); // Default placeholder
+            }
+
+            this.scene.add(neoMesh);
+
+            // Create label element (initially hidden)
+            const label = document.createElement('div');
+            label.className = 'label';
+            label.style.display = 'none';
+            this.overlay.appendChild(label);
+
+            this.trackedNEOs.set(neoData.id, { mesh: neoMesh, data: neoData, label: label, orbitalElements: null, orbitLine: null });
+
+            // Request orbital elements for this NEO
+            this.getOrbitalElements(neoData.id);
+        });
+        this.loadingStatusText.textContent = `Processed ${neoDataArray.length} NEOs.`;
+        this.refreshVisuals(); // Update labels and orbits based on current settings
+        this.updateAllPositions(this.currentJulianDate);
+    }
+
+
+    getOrbitalElements(neoId) {
+        window.room.emit('get_asteroid_orbital_elements', { asteroid_id: neoId }, (elements) => {
+            // This callback is specific to the WebsimSocket.emit if it supports it.
+            // The main handling is in the 'asteroid_orbital_elements' event listener.
+            if (elements && elements[neoId] && this.trackedNEOs.has(neoId)) {
+                 console.log(`Orbital elements for ${neoId} received via emit callback.`);
+                 const neo = this.trackedNEOs.get(neoId);
+                 neo.orbitalElements = elements[neoId];
+                 this.drawOrbit(neoId);
+                 this.updateNEOPosition(neoId, this.currentJulianDate);
+            }
+        });
+    }
+
+    // --- Orbital Calculations (Simplified Keplerian) ---
+    // For planets, we can use approximate elements or fetch from a service.
+    // For NEOs, these would ideally come from the server.
+    getApproximatePlanetOrbit(planetName, julianDate) {
+        // Placeholder: In a real app, use a library like TLE.js or fetch from HORIZONS
+        // These are VERY rough approximations for major planets, not accurate for precise work.
+        // (a in AU, i, om, w, ma in degrees)
+        const planetElements = {
+            Mercury: { epoch: 2451545.0, a: 0.387098, e: 0.205630, i: 7.00487, om: 48.33167, w: 29.12428, ma: 174.7947 },
+            Venus:   { epoch: 2451545.0, a: 0.723332, e: 0.006773, i: 3.39471, om: 76.68069, w: 54.85230, ma: 50.41608 },
+            Earth:   { epoch: 2451545.0, a: 1.000000, e: 0.016710, i: 0.00005, om: -11.26064, w: 114.20783,ma: 358.6170 }, // Earth's orbit defines ecliptic
+            Mars:    { epoch: 2451545.0, a: 1.523662, e: 0.093412, i: 1.85061, om: 49.57854, w: 286.46230,ma: 19.3939 },
+            Jupiter: { epoch: 2451545.0, a: 5.203363, e: 0.048393, i: 1.30530, om: 100.55615,w: 274.25465,ma: 19.6679 },
+            Saturn:  { epoch: 2451545.0, a: 9.537070, e: 0.054151, i: 2.48446, om: 113.71504,w: 339.39104,ma: 317.0207 },
+            Uranus:  { epoch: 2451545.0, a: 19.19126, e: 0.047168, i: 0.76986, om: 74.22988, w: 96.54133, ma: 142.2386 },
+            Neptune: { epoch: 2451545.0, a: 30.06900, e: 0.008586, i: 1.76917, om: 131.72169,w: 272.84633,ma: 260.2471 }
+        };
+        if (!planetElements[planetName]) return null;
+
+        let elements = { ...planetElements[planetName] };
+        elements.a = elements.a * AU; // Convert AU to km
+        elements.i_rad = THREE.MathUtils.degToRad(elements.i);
+        elements.om_rad = THREE.MathUtils.degToRad(elements.om); // Longitude of Ascending Node
+        elements.w_rad = THREE.MathUtils.degToRad(elements.w);   // Argument of Perihelion
+        elements.ma_rad = THREE.MathUtils.degToRad(elements.ma); // Mean Anomaly at epoch
+
+        // Daily motions (degrees/day) - very simplified
+        const n_deg_day = {
+            Mercury: 4.092334, Venus: 1.602130, Earth: 0.985609, Mars: 0.524033,
+            Jupiter: 0.083085, Saturn: 0.033460, Uranus: 0.011732, Neptune: 0.005981
+        };
+        const n = THREE.MathUtils.degToRad(n_deg_day[planetName] || 0); // Mean motion in radians per day
+
+        elements.n = n; // Store mean motion
+        elements.current_ma_rad = elements.ma_rad + n * (julianDate - elements.epoch);
+
+        return elements;
+    }
+
+
+    calculatePositionFromKeplerian(elements, julianDate) {
+        if (!elements || elements.a === undefined) {
+            // console.warn("Incomplete orbital elements for position calculation.");
+            return new THREE.Vector3(0,0,0); // Default to origin if elements are missing
+        }
+
+        const G = 6.67430e-11; // Gravitational constant
+        const M_sun_kg = 1.989e30; // Mass of Sun
+        const mu = G * M_sun_kg / (1e9); // Standard gravitational parameter (km^3/s^2), G*M but for km
+
+        // If mean motion 'n' is not provided, calculate it (radians per second for consistency with km)
+        const n = elements.n_rad_per_sec || Math.sqrt(mu / Math.pow(elements.a, 3));
+
+        // Mean anomaly M at julianDate
+        const M = (elements.ma_rad + n * (julianDate - elements.epoch) * 86400) % (2 * Math.PI); // 86400 seconds per day
+
+        // Solve Kepler's equation for Eccentric Anomaly E: M = E - e sin(E)
+        // Using Newton-Raphson iteration
+        let E = M; // Initial guess
+        for (let i = 0; i < 10; i++) { // Max 10 iterations usually sufficient
+            E = E - (E - elements.e * Math.sin(E) - M) / (1 - elements.e * Math.cos(E));
+        }
+
+        // True anomaly nu
+        const nu = 2 * Math.atan2(Math.sqrt(1 + elements.e) * Math.sin(E / 2), Math.sqrt(1 - elements.e) * Math.cos(E / 2));
+
+        // Distance to central body r
+        const r = elements.a * (1 - elements.e * Math.cos(E));
+
+        // Position in orbital plane (x_orb, y_orb)
+        const x_orb = r * Math.cos(nu);
+        const y_orb = r * Math.sin(nu);
+
+        // Convert to 3D Cartesian coordinates in the Ecliptic frame
+        // (using pre-converted radians for i, om, w)
+        const i = elements.i_rad;
+        const om = elements.om_rad; // LAN
+        const w = elements.w_rad;   // ArgPeri
+
+        const x_ecl = (Math.cos(om) * Math.cos(w + nu) - Math.sin(om) * Math.sin(w + nu) * Math.cos(i)) * r;
+        const y_ecl = (Math.sin(om) * Math.cos(w + nu) + Math.cos(om) * Math.sin(w + nu) * Math.cos(i)) * r;
+        const z_ecl = (Math.sin(i) * Math.sin(w + nu)) * r;
+
+        // THREE.js uses Y-up, and our coordinate system might need adjustment.
+        // Assuming standard heliocentric ecliptic: X towards Vernal Equinox, Z towards Ecliptic North Pole.
+        // If your 3D scene is Y-up, you might need to swap y and z.
+        // The raDecToCartesian already handles one such convention. Let's assume this output is compatible.
+        return new THREE.Vector3(kmToUnits(x_ecl), kmToUnits(z_ecl), kmToUnits(-y_ecl)); // Y-up, Z towards negative Y of ecliptic
+    }
+
+    updateAllPositions(julianDate) {
+        this.currentJulianDate = julianDate; // Store for other uses
+
+        // Update Planets
+        this.celestialBodies.forEach((body, name) => {
+            if (name === "Sun") return; // Sun is at origin
+            if (body.orbitalElements) {
+                const newPosition = this.calculatePositionFromKeplerian(body.orbitalElements, julianDate);
+                if (body.mesh) {
+                    body.mesh.position.copy(newPosition);
+                    // If Earth has clouds, rotate them slowly
+                    if (name === "Earth" && body.mesh.userData.clouds) {
+                        body.mesh.userData.clouds.rotation.y += 0.0005 * this.timeWarpFactor;
+                    }
+                }
+            }
+        });
+
+        // Update NEOs
+        this.trackedNEOs.forEach((neo, id) => {
+            if (neo.orbitalElements) {
+                const newPosition = this.calculatePositionFromKeplerian(neo.orbitalElements, julianDate);
+                if (neo.mesh) neo.mesh.position.copy(newPosition);
+            } else {
+                // If no orbital elements yet, maybe try to get them again or use a placeholder if available from library
+                if (neo.data && neo.data.ra_h !== undefined && neo.data.dist_au !== undefined) {
+                    // This is a static position, not an orbit.
+                    // const staticPos = raDecToCartesian(neo.data.ra_h, neo.data.ra_m, neo.data.ra_s, neo.data.dec_d, neo.data.dec_m, neo.data.dec_s, neo.data.dist_au);
+                    // if (neo.mesh) neo.mesh.position.copy(staticPos);
+                }
+            }
+        });
+        this.updateLabels(); // Update label positions after meshes move
+    }
+
+    updateNEOPosition(neoId, julianDate) { // For a single NEO
+        const neo = this.trackedNEOs.get(neoId);
+        if (neo && neo.orbitalElements && neo.mesh) {
+            const newPosition = this.calculatePositionFromKeplerian(neo.orbitalElements, julianDate);
+            neo.mesh.position.copy(newPosition);
+            this.updateLabelForObject(neo); // Update its label too
+        }
+    }
+
+
+    // --- Rendering & Animation Loop ---
+    animate() {
+        requestAnimationFrame(this.animate.bind(this));
+        const deltaTime = this.clock.getDelta();
+
+        // Update simulation time
+        if (this.timeWarpFactor !== 0) { // If not paused
+            const elapsedSeconds = deltaTime * this.timeWarpFactor;
+            this.simulatedTime = new Date(this.simulatedTime.getTime() + elapsedSeconds * 1000);
+            const newJulianDate = this.getJulianDate(this.simulatedTime);
+            if (newJulianDate !== this.currentJulianDate) {
+                this.updateAllPositions(newJulianDate);
+                this.emit('timeUpdated', this.simulatedTime); // Notify UI
+            }
+        }
+
+
+        // Update controls (handles camera movement based on input)
+        this.controls.update(deltaTime); // Pass delta if controls use it for damping/inertia
+
+        // Rotate Sun slowly for visual effect (if not using actual rotation data)
+        const sunObj = this.celestialBodies.get("Sun");
+        if (sunObj && sunObj.mesh) {
+            sunObj.mesh.rotation.y += 0.0001 * this.timeWarpFactor;
+        }
+
+        // Update atmosphere shader (if Earth exists and has it)
+        const earth = this.celestialBodies.get("Earth");
+        if (earth && earth.mesh) {
+            const atmosphere = earth.mesh.getObjectByName("EarthAtmosphere");
+            if (atmosphere && atmosphere.material.uniforms.viewVector) {
+                atmosphere.material.uniforms.viewVector.value = this.camera.position;
+            }
+        }
+
+        this.updateLabels(); // Update label positions every frame
+        this.renderer.render(this.scene, this.camera);
+        TWEEN.update(); // Update tweens
+    }
+
+    // --- UI Interaction & Visuals ---
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.updateLabels(); // Labels might shift
+    }
+
+    onMouseMove(event) {
+        // For tooltip / hover effects
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.scene.children, true); // Check all descendants
+
+        if (intersects.length > 0) {
+            let firstIntersected = null;
+            for(let i=0; i<intersects.length; ++i) {
+                if(intersects[i].object.visible && intersects[i].object.name !== "") { // Find first visible, named object
+                    firstIntersected = intersects[i].object;
+                    break;
+                }
+            }
+
+            if (firstIntersected && firstIntersected.userData && firstIntersected.userData.id) {
+                if (this.intersectedObject !== firstIntersected) {
+                    this.intersectedObject = firstIntersected;
+                    this.showTooltip(this.intersectedObject, event.clientX, event.clientY);
+                } else { // Already hovering over this object, just update tooltip position
+                     this.updateTooltipPosition(event.clientX, event.clientY);
+                }
+            } else {
+                this.hideTooltip();
+                this.intersectedObject = null;
+            }
+        } else {
+            this.hideTooltip();
+            this.intersectedObject = null;
+        }
+    }
+
+    onCanvasClick(event) {
+        if (this.intersectedObject) {
+            const data = this.intersectedObject.userData;
+            console.log("Clicked on:", data);
+            this.selectedObject = this.intersectedObject; // Update selected object reference
+
+            if (data.type === 'NEO') {
+                this.emit('neoSelected', data); // For React info panel
+                this.selectAndFocusOnNeo(data.id, true); // Focus and also update selection style
+            } else if (data.type === 'Planet' || data.type === 'Star') {
+                this.emit('celestialSelected', data); // Generic event for planets/sun
+                this.setReferenceFrame(data.id, true); // Focus on selected planet/sun
+            }
+            this.refreshVisuals(); // Update orbit lines, labels for new selection
+        } else {
+            // Clicked on empty space - deselect?
+            // this.selectedObject = null;
+            // this.emit('deselectedAll');
+            // this.refreshVisuals();
+        }
+    }
+
+    showTooltip(object, x, y) {
+        const data = object.userData;
+        let tooltipText = `Name: ${object.name || data.id}`;
+        if (data.type) tooltipText += `\nType: ${data.type}`;
+        if (data.diameter_km) tooltipText += `\nDiameter: ${data.diameter_km.toFixed(2)} km`;
+        if (data.class) tooltipText += `\nClass: ${data.class}`;
+        if (data.dist_au) tooltipText += `\nDistance: ${data.dist_au.toFixed(3)} AU (current obs)`;
+
+        this.tooltipElement.innerHTML = tooltipText;
+        this.tooltipElement.style.display = 'block';
+        this.updateTooltipPosition(x,y);
+    }
+    updateTooltipPosition(x, y) {
+        // Position tooltip near mouse, but ensure it stays on screen
+        const offsetX = 15;
+        const offsetY = 15;
+        let newX = x + offsetX;
+        let newY = y + offsetY;
+        if (newX + this.tooltipElement.offsetWidth > window.innerWidth) {
+            newX = x - this.tooltipElement.offsetWidth - offsetX;
+        }
+        if (newY + this.tooltipElement.offsetHeight > window.innerHeight) {
+            newY = y - this.tooltipElement.offsetHeight - offsetY;
+        }
+        this.tooltipElement.style.left = `${newX}px`;
+        this.tooltipElement.style.top = `${newY}px`;
+    }
+    hideTooltip() {
+        this.tooltipElement.style.display = 'none';
+    }
+
+
+    updateLabels() {
+        const labelType = this.options.showLabels;
+        if (labelType === 'none') {
+            this.trackedNEOs.forEach(neo => { if(neo.label) neo.label.style.display = 'none'; });
+            this.celestialBodies.forEach(body => { if(body.label) body.label.style.display = 'none'; }); // Assuming planets might have labels too
+            return;
+        }
+
+        const cameraPosition = this.camera.position;
+        const labelMaxDistSq = this.options.labelMaxDistance * this.options.labelMaxDistance;
+
+        const updateLabelForObject = (obj, isPlanet = false) => {
+            if (!obj.mesh || !obj.label) return;
+
+            const distSq = cameraPosition.distanceToSquared(obj.mesh.position);
+            if (distSq > labelMaxDistSq && !isPlanet) { // Planets always show if not 'none'
+                obj.label.style.display = 'none';
+                return;
+            }
+
+            const screenPos = this.projectToScreen(obj.mesh.position);
+            if (screenPos.z > 1) { // Behind camera
+                obj.label.style.display = 'none';
+            } else {
+                obj.label.style.display = 'block';
+                obj.label.style.left = `${screenPos.x}px`;
+                obj.label.style.top = `${screenPos.y}px`;
+                let text = obj.data.name || obj.data.id;
+                if (labelType === 'detailed') {
+                    text += `\nClass: ${obj.data.class || 'N/A'}`;
+                    text += `\nPos: ${obj.mesh.position.x.toFixed(1)}, ${obj.mesh.position.y.toFixed(1)}, ${obj.mesh.position.z.toFixed(1)}`;
+                }
+                obj.label.textContent = text;
+            }
+        };
+
+        this.trackedNEOs.forEach(neo => updateLabelForObject(neo));
+        // Add similar logic for celestial bodies if they have labels
+        // this.celestialBodies.forEach(body => updateLabelForObject(body, true));
+    }
+
+    projectToScreen(worldPosition) {
+        const vector = worldPosition.clone().project(this.camera);
+        vector.x = (vector.x + 1) / 2 * window.innerWidth;
+        vector.y = -(vector.y - 1) / 2 * window.innerHeight;
+        return vector; // x, y are screen coords, z is distance (used for clipping)
+    }
+
+
+    drawOrbit(objectId, isPlanet = false) {
+        const objectData = isPlanet ? this.celestialBodies.get(objectId) : this.trackedNEOs.get(objectId);
+        if (!objectData || !objectData.orbitalElements) {
+            console.warn(`No orbital elements for ${objectId} to draw orbit.`);
+            return;
+        }
+
+        const elements = objectData.orbitalElements;
+        const points = [];
+        const segments = 120; // Number of points in the orbit ellipse
+
+        // Clear existing orbit line if any
+        if (objectData.orbitLine) {
+            this.orbitLinesGroup.remove(objectData.orbitLine);
+            objectData.orbitLine.geometry.dispose();
+            objectData.orbitLine.material.dispose();
+            objectData.orbitLine = null;
+        }
+
+
+        // Calculate points for one full orbit period
+        // For simplicity, iterate mean anomaly from 0 to 2PI
+        const tempElements = JSON.parse(JSON.stringify(elements)); // Deep copy
+        for (let i = 0; i <= segments; i++) {
+            tempElements.ma_rad = (2 * Math.PI * i) / segments; // Vary mean anomaly
+            // Use a fixed epoch for orbit drawing, otherwise it changes with time.
+            // The position calculation should use the elements' original epoch for M calculation.
+            const pos = this.calculatePositionFromKeplerian({
+                ...elements, // original epoch, e, a, i, om, w
+                ma_rad: tempElements.ma_rad, // override MA for this point
+                n_rad_per_sec: elements.n_rad_per_sec || Math.sqrt(1.989e30 * 6.67430e-11 / (1e9)) / Math.pow(elements.a, 1.5) // Use mu_sun if n not present
+            }, elements.epoch); // Calculate E and nu based on this MA at the elements' epoch
+            points.push(pos);
+        }
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        let color = 0x888888; // Default grey
+        if (isPlanet) color = 0x0077ff; // Blue for planets
+        else if (objectData.data && (objectData.data.is_potentially_hazardous_asteroid || (objectData.data.class && objectData.data.class.includes('PHA')))) {
+            color = 0xff0000; // Red for PHA orbits
+        } else if (this.selectedObject && this.selectedObject.userData.id === objectId) {
+            color = 0x00ff00; // Green for selected NEO orbit
+        }
+
+        const material = new THREE.LineBasicMaterial({ color: color, linewidth: isPlanet ? 2 : 1, transparent: true, opacity: isPlanet ? 0.6 : 0.4 });
+        const line = new THREE.Line(geometry, material);
+        line.name = `${objectId}_orbit`;
+        objectData.orbitLine = line;
+        this.orbitLinesGroup.add(line);
+        line.visible = this.shouldOrbitBeVisible(objectId, isPlanet);
+    }
+
+
+    refreshVisuals() { // Called when options change that affect visibility of orbits/labels
+        this.updateLabels(); // Handles label visibility based on options
+
+        // Update orbit visibility
+        this.orbitLinesGroup.children.forEach(line => line.visible = false); // Hide all first
+
+        const showOrbitsOption = this.options.showOrbits;
+
+        if (showOrbitsOption === 'all_planets') {
+            this.celestialBodies.forEach((body, id) => {
+                if (id !== "Sun" && body.orbitLine) body.orbitLine.visible = true;
+                else if (id !== "Sun" && !body.orbitLine && body.orbitalElements) this.drawOrbit(id, true); // Draw if not existing
+            });
+        } else if (showOrbitsOption === 'selected') {
+            if (this.selectedObject && this.selectedObject.userData.id) {
+                const id = this.selectedObject.userData.id;
+                const isPlanet = this.celestialBodies.has(id);
+                const obj = isPlanet ? this.celestialBodies.get(id) : this.trackedNEOs.get(id);
+                if (obj && obj.orbitLine) obj.orbitLine.visible = true;
+                else if (obj && obj.orbitalElements) this.drawOrbit(id, isPlanet); // Draw if not existing
+            }
+        } else if (showOrbitsOption === 'all_visible_neos') {
+            this.trackedNEOs.forEach((neo, id) => {
+                 if (neo.orbitLine) neo.orbitLine.visible = true;
+                 else if (neo.orbitalElements) this.drawOrbit(id, false); // Draw if not existing
+            });
+        }
+        // 'none' is handled by hiding all initially
+    }
+
+    shouldOrbitBeVisible(objectId, isPlanet) {
+        const showOrbitsOption = this.options.showOrbits;
+        if (showOrbitsOption === 'none') return false;
+        if (isPlanet && showOrbitsOption === 'all_planets') return true;
+        if (!isPlanet && showOrbitsOption === 'all_visible_neos') return true;
+        if (this.selectedObject && this.selectedObject.userData.id === objectId && showOrbitsOption === 'selected') return true;
+        return false;
+    }
+
+
+    // --- API for UI interaction ---
+    setOption(key, value) {
+        if (this.options.hasOwnProperty(key)) {
+            this.options[key] = value;
+            console.log(`Option ${key} set to ${value}`);
+            this.refreshVisuals(); // Refresh if it affects display
+             if (key === 'referenceFrame') {
+                this.setReferenceFrame(value, true); // Transition if changing ref frame
+            }
+        }
+    }
+
+    setTimeWarp(factor) {
+        this.timeWarpFactor = Math.max(0, Math.min(factor, 100000)); // Clamp warp factor
+        console.log("Time warp factor set to:", this.timeWarpFactor);
+        this.emit('timeUpdated', this.simulatedTime); // Update UI with new warp factor potentially
+    }
+
+    setSimulationTime(newDate) {
+        if (newDate instanceof Date && !isNaN(newDate)) {
+            this.simulatedTime = newDate;
+            const newJulianDate = this.getJulianDate(this.simulatedTime);
+            this.updateAllPositions(newJulianDate);
+            this.emit('timeUpdated', this.simulatedTime);
+            console.log("Simulation time set to:", this.simulatedTime.toISOString());
+        }
+    }
+
+    getJulianDate(date) {
+        // Convert a JavaScript Date object to Julian Date
+        // Algorithm from https://quasar.as.utexas.edu/BillInfo/JulianDatesG.html
+        let Y = date.getUTCFullYear();
+        let M = date.getUTCMonth() + 1; // Month is 0-indexed
+        let D = date.getUTCDate() + (date.getUTCHours() + date.getUTCMinutes()/60 + date.getUTCSeconds()/3600)/24;
+
+        if (M <= 2) {
+            Y = Y - 1;
+            M = M + 12;
+        }
+        const A = Math.floor(Y / 100);
+        const B = 2 - A + Math.floor(A / 4);
+        return Math.floor(365.25 * (Y + 4716)) + Math.floor(30.6001 * (M + 1)) + D + B - 1524.5;
+    }
+
+    selectAndFocusOnNeo(neoId, transition = true) {
+        const neo = this.trackedNEOs.get(neoId);
+        if (neo && neo.mesh) {
+            this.selectedObject = neo.mesh; // Set as currently selected
+            this.emit('neoSelected', neo.data); // Update UI panel
+
+            const duration = transition ? 800 : 0; // ms
+            // Focus camera on the NEO
+            // Keep current zoom level or set a preferred one for NEOs
+            const currentZoom = this.camera.position.distanceTo(this.controls.target);
+            const targetZoom = Math.min(currentZoom, kmToUnits(AU * 0.1)); // Zoom in if further, but not too close
+
+            // Set new target for controls (where camera looks and rotates around)
+            this.controls.setTarget(neo.mesh.position.clone(), true, duration);
+
+            // Set camera position to maintain offset or specific zoom
+            const offsetDirection = this.camera.position.clone().sub(this.controls.target).normalize();
+            const newCameraPos = neo.mesh.position.clone().add(offsetDirection.multiplyScalar(targetZoom));
+            this.controls.setCameraPosition(newCameraPos, neo.mesh.position, duration);
+
+
+            console.log(`Selected and focusing on ${neo.data.name}`);
+            this.refreshVisuals(); // Update orbit/label styles for selected
+        } else {
+            console.warn(`NEO with ID ${neoId} not found for selection.`);
+        }
+    }
+
+    calculateAndShowOrbit(neoId) { // Called from info panel button
+        const neo = this.trackedNEOs.get(neoId);
+        if (neo) {
+            if (neo.orbitalElements) {
+                this.drawOrbit(neoId);
+                if(neo.orbitLine) neo.orbitLine.visible = true; // Make sure it's visible
+            } else {
+                console.log(`Requesting orbital elements for ${neoId} to draw orbit.`);
+                this.getOrbitalElements(neoId); // It will draw orbit on receive
+            }
+        }
+    }
+
+    setReferenceFrame(bodyId, transition = false) {
+        let targetObject;
+        if (bodyId === "Sun" || !this.celestialBodies.has(bodyId)) {
+            targetObject = this.celestialBodies.get("Sun"); // Default to Sun
+            if (!targetObject) { // If Sun itself isn't loaded for some reason
+                 this.controls.setTarget(new THREE.Vector3(0,0,0), true, transition ? 500:0); return;
+            }
+        } else {
+            targetObject = this.celestialBodies.get(bodyId);
+        }
+
+        if (targetObject && targetObject.mesh) {
+            this.options.referenceFrame = bodyId; // Update option state
+            const duration = transition ? 1000 : 0; // ms
+            this.controls.setTarget(targetObject.mesh.position.clone(), true, duration);
+            console.log("Reference frame set to:", bodyId);
+
+            // Optional: Adjust camera distance based on the new target's size
+            const targetRadius = targetObject.data.radius_km ? kmToUnits(targetObject.data.radius_km) : kmToUnits(SUN_RADIUS_KM);
+            const desiredDistance = targetRadius * (bodyId === "Sun" ? 20 : 10); // Further for Sun, closer for planets
+            const currentOffset = this.camera.position.clone().sub(targetObject.mesh.position);
+            const newCameraPos = targetObject.mesh.position.clone().add(currentOffset.normalize().multiplyScalar(desiredDistance));
+            this.controls.setCameraPosition(newCameraPos, targetObject.mesh.position, duration);
+
+        } else {
+            console.warn(`Cannot set reference frame to ${bodyId}: object not found or has no mesh.`);
+        }
+    }
+
+} // End of AsteroidTracker Class
+
+
+// --- Main Execution ---
+window.addEventListener('DOMContentLoaded', () => {
+    try {
+        const app = new AsteroidTracker();
+        window.app = app; // Make it accessible from console for debugging
+    } catch (error) {
+        console.error("Failed to initialize AsteroidTracker:", error);
+        const loadingIndicator = document.getElementById('loading_indicator');
+        if (loadingIndicator) {
+            loadingIndicator.innerHTML = `<p style="color:red;">Fatal Error: Could not initialize application.<br/>${error.message}<br/>Check console for details.</p>`;
+            loadingIndicator.style.display = 'block';
+        }
+    }
+});
+
+    </script>
+</body></html>
